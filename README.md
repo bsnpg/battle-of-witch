@@ -28,10 +28,12 @@ best of 5, first to 3.
   from the reserve, and an empty book cannot cast. Headshots pay more, recoil
   and spread punish casting on the move, stopping to aim pays. Right-click to
   aim, `R` to recharge, `Shift` to walk slow, `Ctrl` to crouch, `Space` to jump.
-- **Blast tomes:** three explosion spells, dearer the harder they hit — and the
+- **Blast tomes:** four explosion spells, dearer the harder they hit — and the
   harder they are to use. Ember Burst is quick and small, Fireball arcs slower
   and hits harder, Meteor Call has a long wind-up, a slow orb and a huge blast
-  that is risky up close. Buy a tome in the shop, cast it with `G`.
+  that is risky up close. Void Nova is the dearest: a slow, huge blast that
+  leaves a collapsing void field behind it, burning and dragging enemy witches
+  for four seconds. Buy a tome in the shop, cast it with `G`.
 - **Economy:** crystals of magic between rounds — ◆ 800 to start, ◆ 300 a kill,
   ◆ 300 a banner claim, ◆ 3,250 for a round win, ◆ 1,900 for a loss or a draw.
   Press `B` in the buy phase to buy spellbooks, blast tomes and robes.
@@ -52,7 +54,7 @@ best of 5, first to 3.
 - `game/src/flag.js` — the banner: ring, claim channel, contest rules
 - `game/src/economy.js` — crystal income and the buy menu's prices
 - `game/src/rounds.js` — round and match flow, draws, overtime
-- `game/src/effects.js` — pooled bolt tracers, sparks, blast orbs and explosions
+- `game/src/effects.js` — pooled bolt tracers, sparks, blast orbs, explosions and the collapsing void field
 - `game/src/audio.js` — synthesised WebAudio sound, no audio files
 - `game/src/hud.js` — the DOM HUD (never touches the simulation)
 - `game/src/input.js` — keyboard, mouse and pointer lock
@@ -76,4 +78,4 @@ headless browser with WebGL 2:
 
 `?selftest=1` drives the real simulation headlessly — charges and recharge,
 banner claim, wipe, draw, overtime, shop spending, blast area damage, blast
-wind-up — and writes PASS/FAIL lines to `window.__selftest`.
+wind-up, Void Nova field — and writes PASS/FAIL lines to `window.__selftest`.

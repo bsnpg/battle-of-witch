@@ -14,6 +14,7 @@ export function createGameState() {
     orb: null, // {x,y,z,vx,vy,vz,fuse,tier} or null — the one live blast orb
     orbWindUp: 0, // seconds left before a cast orb leaves the staff
     orbPending: null, // blast def waiting out its wind-up
+    voidField: null, // {x,y,z,left,radius,startRadius,tick} or null — the collapsing field a Void Nova leaves behind
     noise: null, // {x, z, time} — the last loud sound bots heard
     feed: [], // kill-feed entries, newest first, capped in hud.js
     started: false,
@@ -29,6 +30,7 @@ export function createGameState() {
       state.orb = null;
       state.orbWindUp = 0;
       state.orbPending = null;
+      state.voidField = null;
       state.noise = null;
     },
     resetMatch() {

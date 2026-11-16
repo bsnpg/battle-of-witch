@@ -280,6 +280,13 @@ function explodeOrb() {
     // Blast tomes are risky up close: half damage to the caster too.
     applyPlayerDamage(Math.round(def.damage * (1 - (playerDist / def.radius) * 0.6) * 0.5), `Your ${def.name}`, false);
   }
+  if (def.id === 'nova') {
+    // Void Nova leaves a collapsing void field behind its blast: four seconds
+    // of burn and drag inside a shrinking circle, so the dearest tome keeps
+    // hurting after the orb is gone.
+    state.voidField = { x: at.x, y: at.y, z: at.z, left: 4, radius: def.radius, startRadius: def.radius, tick: 0 };
+    effects.showVoidField(at.x, at.y, at.z, def.radius);
+  }
   checkRoundEnd();
 }
 
@@ -314,6 +321,57 @@ function stepOrb(dt) {
     }
   }
   if (boom) explodeOrb();
+}
+
+function stepVoidField(dt) {
+  const field = state.voidField;
+  if (!field) return;
+  field.left -= dt;
+  if (field.left <= 0) {
+    state.voidField = null;
+    effects.hideVoidField();
+    return;
+  }
+  // The circle collapses from its blast radius to nothing over four seconds.
+  field.radius = field.startRadius * (field.left / 4);
+  effects.showVoidField(field.x, field.y, field.z, field.radius);
+  if (rounds.state.phase !== 'live') return;
+  // The void drags every witch inside it toward the centre, a slow pull the
+  // target can fight by walking out — but the circle is shrinking too.
+  for (const bot of bots.bots) {
+    if (!bot.alive) continue;
+    const dx = field.x - bot.position.x;
+    const dz = field.z - bot.position.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist >= field.radius || dist < 0.05) continue;
+    const pull = 1.2 * dt;
+    bot.position.x += (dx / dist) * pull;
+    bot.position.z += (dz / dist) * pull;
+    bot.group.position.x = bot.position.x;
+    bot.group.position.z = bot.position.z;
+  }
+  // Half-second burn ticks: 20 damage a tick to every witch still inside, half
+  // that to the caster if they are standing in their own field.
+  field.tick += dt;
+  if (field.tick < 0.5) return;
+  field.tick -= 0.5;
+  for (const bot of bots.bots) {
+    if (!bot.alive) continue;
+    const burnDist = Math.hypot(bot.position.x - field.x, bot.position.z - field.z);
+    if (burnDist >= field.radius) continue;
+    bots.damageBot(bot, 20, { name: 'You', team: 'azure' }, false);
+    if (!bot.alive) {
+      state.kills += 1;
+      economy.rewardKill();
+      hud.addFeed(`You ▸ ${bot.name} (Void Nova)`, 'azure');
+      hud.setMoney(economy.state.crystals);
+    }
+  }
+  if (state.alive) {
+    const casterDist = Math.hypot(player.state.position.x - field.x, player.state.position.z - field.z);
+    if (casterDist < field.radius) applyPlayerDamage(10, 'Your Void Nova', false);
+  }
+  checkRoundEnd();
 }
 
 function checkRoundEnd() {
@@ -516,6 +574,9 @@ function step(dt) {
     }
   }
 
+  // The void field collapses on its own clock, even as the round ends.
+  stepVoidField(dt);
+
   effects.step(dt);
   state.damageFlash = Math.max(0, state.damageFlash - dt * 1.6);
   hud.damageFlash(state.damageFlash);
@@ -571,7 +632,8 @@ function frame(now) {
       if (input.takePressed('Digit4')) buyItem('burst');
       if (input.takePressed('Digit5')) buyItem('fireball');
       if (input.takePressed('Digit6')) buyItem('meteor');
-      if (input.takePressed('Digit7')) buyItem('armor');
+      if (input.takePressed('Digit7')) buyItem('nova');
+      if (input.takePressed('Digit8')) buyItem('armor');
       if (input.takePressed('Escape')) closeBuy();
     } else {
       if (input.takePressed('Digit1') && state.owned.has('spark')) weapons.equip('spark');
@@ -821,6 +883,27 @@ function runSelfTest() {
     check('G starts a blast wind-up', castOk && state.orbPending !== null && state.orbWindUp > 0);
     settle(60);
     check('orb launches after wind-up', state.orb !== null);
+    // Void Nova: the dearest tome leaves a collapsing field behind its blast.
+    player.respawn({ x: -14, z: -14 }, 0);
+    economy.state.crystals = 4000;
+    const nova = economy.buyBlast('nova');
+    check('buying Void Nova tome grants 1 charge', nova && nova.id === 'nova' && nova.charges === 1);
+    weapons.setBlast('nova');
+    state.orb = { x: 0, y: 1, z: 2, vx: 0, vy: 0, vz: 0, fuse: 0.1, tier: 'nova' };
+    settle(30);
+    check('Void Nova detonation leaves a void field', state.orb === null && state.voidField !== null);
+    if (rounds.state.phase !== 'live') rounds.beginLive();
+    const fieldVictim = bots.bots.find((b) => b.team === 'ember' && b.alive) || bots.bots.find((b) => b.alive);
+    fieldVictim.position.set(6, 0, 2);
+    fieldVictim.group.position.set(6, 0, 2);
+    fieldVictim.state = 'hold';
+    fieldVictim.holdUntil = 99999;
+    fieldVictim.route = [];
+    const victimHp = fieldVictim.health;
+    const victimDist = Math.hypot(fieldVictim.position.x - state.voidField.x, fieldVictim.position.z - state.voidField.z);
+    settle(60);
+    check('void field burns witches inside it', fieldVictim.health < victimHp);
+    check('void field drags witches toward its centre', Math.hypot(fieldVictim.position.x - state.voidField.x, fieldVictim.position.z - state.voidField.z) < victimDist);
   } catch (error) {
     results.push(`FAIL exception: ${error.message}`);
   }

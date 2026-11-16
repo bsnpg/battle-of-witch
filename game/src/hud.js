@@ -71,7 +71,7 @@ export function createHud(callbacks) {
     element.textContent = value;
   }
 
-  // Build the buy menu once from the spell tables: three books, three blast
+  // Build the buy menu once from the spell tables: three books, four blast
   // tomes, one robe. Prices are crystals of magic.
   const buyButtons = {};
   function buyCard(id, name, detail, price, key) {
@@ -90,7 +90,8 @@ export function createHud(callbacks) {
   buyCard('burst', 'Ember Burst', 'Blast tome · 70 dmg · 3 charges · G to cast', BLASTS.burst.price, '4');
   buyCard('fireball', 'Fireball', 'Blast tome · 120 dmg · 2 charges · slower orb', BLASTS.fireball.price, '5');
   buyCard('meteor', 'Meteor Call', 'Blast tome · 190 dmg · 1 charge · long wind-up', BLASTS.meteor.price, '6');
-  buyCard('armor', 'Robe of Warding', 'Absorbs half of each hit', ARMOR_PRICE, '7');
+  buyCard('nova', 'Void Nova', 'Blast tome · 260 dmg · 1 charge · leaves a collapsing void field', BLASTS.nova.price, '7');
+  buyCard('armor', 'Robe of Warding', 'Absorbs half of each hit', ARMOR_PRICE, '8');
   $('buy-close').addEventListener('click', () => callbacks.onBuyClose());
 
   function refreshBuy(money, owned, blastId, blastCharges, hasArmor) {

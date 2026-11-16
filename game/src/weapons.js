@@ -1,10 +1,12 @@
-// The spellbooks: four bolt books, one per role, plus three blast tomes. A book
+// The spellbooks: four bolt books, one per role, plus four blast tomes. A book
 // holds charges (its ammunition): casting spends one, R recharges it from the
 // reserve, and at zero charges it cannot cast. Stopping to aim pays: spread grows
 // with movement speed and shrinks while aiming, and every cast kicks the view.
 // Blast tomes are bought in the shop and cast with G: the dearer the tome, the
 // harder it hits — and the harder it is to use (longer wind-up, slower orb,
-// longer cooldown, fewer charges, risky up close).
+// longer cooldown, fewer charges, risky up close). The dearest tome, Void Nova,
+// leaves a collapsing void field behind its blast that keeps burning and
+// dragging enemy witches for four seconds after the orb is gone.
 // The view model is one carved staff whose orb glows in the current book's
 // element colour; the camera in main.js owns the ray.
 import * as THREE from 'three';
@@ -53,6 +55,10 @@ export const BLASTS = {
   meteor: {
     id: 'meteor', name: 'Meteor Call', tier: 3, price: 2200, charges: 1,
     damage: 190, radius: 9, windUp: 0.9, speed: 8, cooldown: 5, fuse: 3.0, element: 'void',
+  },
+  nova: {
+    id: 'nova', name: 'Void Nova', tier: 4, price: 3500, charges: 1,
+    damage: 260, radius: 12, windUp: 1.4, speed: 5, cooldown: 8, fuse: 3.5, element: 'void',
   },
 };
 

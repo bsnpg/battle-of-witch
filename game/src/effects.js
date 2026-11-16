@@ -57,6 +57,15 @@ export function createEffects(scene) {
   const orbLight = new THREE.PointLight(new THREE.Color(PALETTE.sodium), 0, 12, 1.6);
   scene.add(orbLight);
 
+  // The collapsing void field a Void Nova leaves behind: one dark sphere that
+  // shrinks with the field, lit cold violet from its heart.
+  const voidMaterial = new THREE.MeshBasicMaterial({ color: new THREE.Color(ELEMENT_COLORS.void), transparent: true, opacity: 0.28, depthWrite: false });
+  const voidMesh = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), voidMaterial);
+  voidMesh.visible = false;
+  scene.add(voidMesh);
+  const voidLight = new THREE.PointLight(new THREE.Color(ELEMENT_COLORS.void), 0, 24, 1.5);
+  scene.add(voidLight);
+
   return {
     tracer(from, to, element = 'spark') {
       const slot = tracers[tracerIndex];
@@ -98,6 +107,17 @@ export function createEffects(scene) {
     hideOrb() {
       orbMesh.visible = false;
       orbLight.intensity = 0;
+    },
+    showVoidField(x, y, z, radius) {
+      voidMesh.position.set(x, y, z);
+      voidMesh.scale.set(radius, radius * 0.6, radius);
+      voidMesh.visible = true;
+      voidLight.position.set(x, y + 1, z);
+      voidLight.intensity = 40;
+    },
+    hideVoidField() {
+      voidMesh.visible = false;
+      voidLight.intensity = 0;
     },
     explosion(at, element = 'ember') {
       const colour = ELEMENT_COLORS[element] || ELEMENT_COLORS.ember;
