@@ -80,10 +80,13 @@ best of 5, first to 3.
 The four captures are deterministic frames of the game's own code, taken in a
 headless browser with WebGL 2:
 
-1. `1-play.jpg` — mid-round bolt fight near the banner (cover)
+1. `1-play.jpg` — a Void Nova detonating on the banner (cover): the blast
+   ball mid-bloom, its collapsing void field over the yard, five Ember
+   witches dead inside it, the kill feed naming the tome
 2. `2-start.jpg` — the menu over the yard at dusk
 3. `3-buy.jpg` — the buy phase menu
-4. `4-flag.jpg` — the banner three quarters claimed, an Ember witch contesting
+4. `4-flag.jpg` — the banner three quarters claimed, a Fireball detonating
+   on the ring as an Ember witch contests it, the ring lit by the blast
 
 ## Self-test
 

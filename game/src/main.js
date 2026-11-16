@@ -6,7 +6,12 @@
 //
 // ?shot=start|play|buy|flag with &seed=N sets up a deterministic frame, renders
 // it twice, freezes it and sets window.__shotReady — the capture mode the
-// screenshots are taken from.
+// screenshots are taken from. ?shot=blast stages a blast tome detonating on the
+// banner ring (?blast=meteor|nova|fireball|burst, &blastSteps=N steps after the
+// detonation, &blastAt=x,z, &playerAt=x,z) — the explosion cover. The detonation
+// runs through the real orb path, so the kill feed names the tome and the bots
+// in the radius really die. The menu and buy shots stay calm: an explosion
+// behind either menu is invisible behind the panel, so they stage none.
 // ?selftest=1 runs the logic checks below instead of the game loop and writes
 // the results to window.__selftest.
 import * as THREE from 'three';
@@ -774,6 +779,28 @@ function stagePlayer(x, z) {
   syncCamera();
 }
 
+// Capture staging helper: park a bot in the open, facing a yaw, holding
+// still for the frozen frame.
+function placeBot(bot, x, z, yaw) {
+  bot.position.set(x, 0, z);
+  bot.group.position.set(x, 0, z);
+  bot.yaw = yaw;
+  bot.group.rotation.y = yaw;
+  bot.seen = null;
+  bot.state = 'hold';
+  bot.holdUntil = state.time + 10;
+  bot.route = [];
+}
+
+// Capture staging helper: detonate a blast tome through the real orb path
+// (the same state.orb the self-test uses), then step on so the frozen frame
+// catches the explosion mid-bloom instead of at its first or last instant.
+function detonateBlast(tier, x, y, z, stepsAfter) {
+  state.orb = { x, y, z, vx: 0, vy: 0, vz: 0, fuse: 0.05, tier };
+  settle(3); // the fuse burns out and explodeOrb runs, with real damage
+  settle(stepsAfter);
+}
+
 function runShot(name) {
   hud.hideOverlay();
   hud.hideBuy();
@@ -804,36 +831,46 @@ function runShot(name) {
     aimAt(new THREE.Vector3(0, 1.6, -10));
     hud.showBuy(economy.state.crystals, state.owned, weapons.state.blastId, weapons.state.blastCharges, false);
     hud.setMoney(economy.state.crystals);
-  } else if (name === 'play') {
+  } else if (name === 'play' || name === 'blast') {
+    // The cover: a blast tome detonating on the banner ring, mid-bloom.
+    // ?shot=play hardcodes the winning staging (Void Nova, 16 steps after
+    // the detonation, player at -8,12) so the cover is deterministic;
+    // ?shot=blast takes params (?blast=, &blastSteps=, &blastAt=x,z,
+    // &playerAt=x,z) for staging other candidates.
+    const tier = BLASTS[params.get('blast')] ? params.get('blast') : (name === 'play' ? 'nova' : 'meteor');
+    const stepsAfter = Number.parseInt(params.get('blastSteps') ?? (name === 'play' ? '16' : '18'), 10) || 18;
+    const [bx, bz] = (params.get('blastAt') ?? '0,1').split(',').map(Number);
+    const [px, pz] = (params.get('playerAt') ?? (name === 'play' ? '-8,12' : '0.5,6.5')).split(',').map(Number);
     startMatch();
     rounds.beginLive();
     weapons.give('ember');
+    economy.state.crystals = 3500;
+    const tome = economy.buyBlast(tier);
+    if (tome) weapons.setBlast(tome.id);
     settle(240);
-    // Stage the frame: the settle lets the bots walk into the yard, and they
-    // may have killed the player by then — restore the player, clear the feed,
-    // and put the nearest defender in the open mid lane to shoot at.
-    stagePlayer(3.5, 7);
-    const target = nearestEmberBot();
-    if (target) {
-      target.position.set(1.5, 0, -3.0);
-      target.yaw = Math.PI;
-      target.group.position.set(1.5, 0, -3.0);
-      target.group.rotation.y = Math.PI;
-      target.seen = null;
-      target.state = 'hold';
-      target.holdUntil = state.time + 10;
-      aimPoint.set(target.position.x, 1.2, target.position.z);
-      aimAt(aimPoint);
-      for (let round = 0; round < 4; round += 1) {
-        castBolt(0);
-        settle(6);
-      }
-    } else {
-      aimAt(new THREE.Vector3(0, 1.5, 1));
-      castBolt(0);
-      settle(6);
-    }
+    stagePlayer(px, pz);
+    // The frame is about the blast, not a claim the pre-stage fight left
+    // running: clear any banner progress before the detonation.
+    flag.state.team = null;
+    flag.state.progress = 0;
+    hud.clearBanner();
+    // Ember witches clustered on the ring, inside the blast; Azure witches
+    // just off it, so the frame shows both covens in the fight.
+    const embers = bots.bots.filter((b) => b.team === 'ember' && b.alive).slice(0, 4);
+    const spots = [[-2, 0], [2, 0.5], [0, 3], [-1, -0.5]];
+    embers.forEach((bot, i) => placeBot(bot, bx + spots[i][0], bz + spots[i][1], Math.PI));
+    const azures = bots.bots.filter((b) => b.team === 'azure' && b.alive).slice(0, 2);
+    if (azures[0]) placeBot(azures[0], -3.5, 4.5, Math.PI * 0.75);
+    if (azures[1]) placeBot(azures[1], 3.5, 4, Math.PI * 0.75);
+    aimAt(new THREE.Vector3(bx, 1.5, bz));
     hud.setScore(0, 0, 1);
+    if (params.get('orb') === 'flight') {
+      // The orb still riding its arc toward the ring, not yet detonated.
+      state.orb = { x: bx, y: 2.5, z: bz + 6, vx: 0, vy: 1, vz: -6, fuse: 3.0, tier };
+      settle(8);
+    } else {
+      detonateBlast(tier, bx, 1.2, bz, stepsAfter);
+    }
   } else if (name === 'flag') {
     startMatch();
     rounds.beginLive();
@@ -855,6 +892,16 @@ function runShot(name) {
       guard.holdUntil = state.time + 10;
     }
     aimAt(new THREE.Vector3(0, 2.2, 1));
+    // A Fireball detonating on the ring as the claim runs: the contesting
+    // witch is caught inside it, still standing, still contesting.
+    // &flagBlast=none stages the calm claim instead.
+    const flagTier = params.get('flagBlast') ?? 'fireball';
+    if (BLASTS[flagTier]) {
+      economy.state.crystals = 3500;
+      const tome = economy.buyBlast(flagTier);
+      if (tome) weapons.setBlast(tome.id);
+      detonateBlast(flagTier, 0, 1.2, 1, Number.parseInt(params.get('flagSteps') ?? '30', 10) || 30);
+    }
     hud.setObjective('Claim the banner — Azure is channelling it');
     hud.setProgress('Azure claiming the banner', 0.7);
     hud.setTimer(150, true);
