@@ -60,6 +60,18 @@ export function createHud(callbacks) {
   const buyMoney = $('buy-money');
   const buyGrid = $('buy-grid');
   const banner = $('banner');
+  const minimap = $('minimap');
+  const mapLabel = $('map-label');
+  const radioList = $('radio');
+  const mapCtx = minimap.getContext('2d');
+
+  // The minimap's yard: the map's bounds projected onto the canvas, 3.75 px
+  // per metre both ways, north (Ember) at the top.
+  const MAP_BOUNDS = { minX: -22.4, maxX: 22.4, minZ: -18.4, maxZ: 18.4, scale: 3.75 };
+  let mapWalls = [];
+  function toMap(x, z) {
+    return [(x - MAP_BOUNDS.minX) * MAP_BOUNDS.scale, (z - MAP_BOUNDS.minZ) * MAP_BOUNDS.scale];
+  }
 
   let last = {};
   let hitTimer = 0;
@@ -174,6 +186,83 @@ export function createHud(callbacks) {
       item.textContent = text;
       feedList.prepend(item);
       while (feedList.children.length > 5) feedList.lastChild.remove();
+    },
+    // Radio callouts from the coven, under the minimap: short, throttled by
+    // the caller, gone after a few seconds so the column never clogs.
+    addRadio(text) {
+      const item = document.createElement('div');
+      item.className = 'radio-item';
+      item.textContent = text;
+      radioList.prepend(item);
+      while (radioList.children.length > 3) radioList.lastChild.remove();
+      setTimeout(() => item.remove(), 7000);
+    },
+    setZone(name) {
+      setText(mapLabel, 'zone', `DUSTLINE YARD · ${name.toUpperCase()}`);
+    },
+    // The minimap's walls, once, from the map's colliders (floor skipped).
+    setMinimapWalls(colliders) {
+      mapWalls = [];
+      for (const box of colliders) {
+        if (box.max.y <= 0.05) continue;
+        mapWalls.push([box.min.x, box.min.z, box.max.x, box.max.z]);
+      }
+    },
+    // The minimap, drawn every simulation step: walls, the banner ring with
+    // its live claim arc in the claiming coven's colour, teammates always,
+    // enemies only while the coven's spotted intel on them is fresh, and the
+    // player as a wedge turned by their yaw.
+    drawMinimap(view) {
+      const ctx = mapCtx;
+      ctx.clearRect(0, 0, minimap.width, minimap.height);
+      ctx.fillStyle = 'rgba(20, 24, 31, 0.78)';
+      ctx.fillRect(0, 0, minimap.width, minimap.height);
+      ctx.fillStyle = '#4a525c';
+      for (const [x0, z0, x1, z1] of mapWalls) {
+        const [px0, pz0] = toMap(x0, z0);
+        const [px1, pz1] = toMap(x1, z1);
+        ctx.fillRect(px0, pz0, px1 - px0, pz1 - pz0);
+      }
+      const [bx, bz] = toMap(0, 1);
+      const ringColour = view.flagTeam === 'azure' ? '#39b6d9' : view.flagTeam === 'ember' ? '#e2543a' : '#f0a830';
+      ctx.strokeStyle = ringColour;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(bx, bz, 2.6 * MAP_BOUNDS.scale, 0, Math.PI * 2);
+      ctx.stroke();
+      if (view.flagTeam && view.flagProgress > 0) {
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(bx, bz, 2.6 * MAP_BOUNDS.scale, -Math.PI / 2, -Math.PI / 2 + view.flagProgress * Math.PI * 2);
+        ctx.stroke();
+      }
+      for (const bot of view.bots) {
+        if (!bot.alive) continue;
+        const [dx, dz] = toMap(bot.position.x, bot.position.z);
+        if (bot.team === 'azure') {
+          ctx.fillStyle = '#39b6d9';
+          ctx.beginPath();
+          ctx.arc(dx, dz, 3, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (view.time - bot.spottedAt < 4) {
+          ctx.fillStyle = '#e2543a';
+          ctx.beginPath();
+          ctx.arc(dx, dz, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      const [px, pz] = toMap(view.px, view.pz);
+      ctx.save();
+      ctx.translate(px, pz);
+      ctx.rotate(-view.yaw);
+      ctx.fillStyle = '#e9e6df';
+      ctx.beginPath();
+      ctx.moveTo(0, -6);
+      ctx.lineTo(4.5, 5);
+      ctx.lineTo(-4.5, 5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
     },
     clearFeed() {
       feedList.innerHTML = '';

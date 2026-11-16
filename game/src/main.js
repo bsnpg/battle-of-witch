@@ -77,12 +77,14 @@ const muzzle = new THREE.Vector3();
 const aimPoint = new THREE.Vector3();
 const worldView = {
   time: 0,
+  canFight: false,
   playerAlive: true,
   playerPos: player.state.position,
   playerCrouching: false,
   playerSpeed: 0,
   noise: null,
   flag: flag.state,
+  zoneName: (x, z) => map.zoneName(x, z),
 };
 
 let frozen = false;
@@ -90,11 +92,15 @@ let overlayTimer = -1;
 let stepSoundAt = 0;
 let lastClockSecond = -1;
 let lastCaptureMark = 0;
+let lastRadioAt = -99;
+let lastFlagTeam = null;
+let lastContested = false;
 
 const hud = createHud({
   onBuy: buyItem,
   onBuyClose: closeBuy,
 });
+hud.setMinimapWalls(map.colliders);
 hud.onPlay(() => {
   if (shot) return;
   audio.unlock();
@@ -153,6 +159,19 @@ function muzzleWorld() {
 function blastText() {
   const def = weapons.blastDef();
   return def ? `✦ ${def.name} ×${weapons.state.blastCharges}` : '✦ no blast tome';
+}
+
+// The radio: one line at a time, at most one every three seconds, from the
+// first living Azure witch. Bot callouts and banner callouts share the throttle.
+function postRadio(text) {
+  if (state.time - lastRadioAt < 3) return;
+  lastRadioAt = state.time;
+  hud.addRadio(text);
+}
+
+function radioFromBot(text) {
+  const caller = bots.bots.find((b) => b.team === 'azure' && b.alive);
+  postRadio(`RADIO ${caller ? caller.name : 'Coven'}: ${text}`);
 }
 
 function applyPlayerDamage(amount, fromName, head) {
@@ -262,7 +281,7 @@ function explodeOrb() {
   audio.explosion();
   state.noise = { x: orb.x, z: orb.z, time: state.time };
   for (const bot of bots.bots) {
-    if (!bot.alive) continue;
+    if (!bot.alive || bot.team === 'azure') continue;
     const dist = Math.hypot(bot.position.x - orb.x, bot.position.z - orb.z);
     if (dist < def.radius) {
       const damage = Math.round(def.damage * (1 - (dist / def.radius) * 0.6));
@@ -339,7 +358,7 @@ function stepVoidField(dt) {
   // The void drags every witch inside it toward the centre, a slow pull the
   // target can fight by walking out — but the circle is shrinking too.
   for (const bot of bots.bots) {
-    if (!bot.alive) continue;
+    if (!bot.alive || bot.team === 'azure') continue;
     const dx = field.x - bot.position.x;
     const dz = field.z - bot.position.z;
     const dist = Math.hypot(dx, dz);
@@ -356,7 +375,7 @@ function stepVoidField(dt) {
   if (field.tick < 0.5) return;
   field.tick -= 0.5;
   for (const bot of bots.bots) {
-    if (!bot.alive) continue;
+    if (!bot.alive || bot.team === 'azure') continue;
     const burnDist = Math.hypot(bot.position.x - field.x, bot.position.z - field.z);
     if (burnDist >= field.radius) continue;
     bots.damageBot(bot, 20, { name: 'You', team: 'azure' }, false);
@@ -418,6 +437,8 @@ function startRound() {
   state.owned = new Set(['spark', ...[...state.owned].filter((id) => id !== 'spark')]);
   rounds.startRound();
   lastCaptureMark = 0;
+  lastFlagTeam = null;
+  lastContested = false;
   hud.setHealth(100);
   hud.setArmor(state.armor);
   hud.setMoney(economy.state.crystals);
@@ -491,6 +512,8 @@ function drainBotEvents() {
       state.noise = { x: event.from.x, z: event.from.z, time: state.time };
     } else if (event.type === 'damage-player') {
       applyPlayerDamage(event.amount, event.from, event.head);
+    } else if (event.type === 'radio') {
+      postRadio(event.text);
     } else if (event.type === 'kill') {
       const killer = event.killerTeam === 'azure' ? 'azure' : 'ember';
       game.addFeed(`${event.killerName} ▸ ${event.victim.name}${event.head ? ' (headshot)' : ''}`, killer);
@@ -509,6 +532,10 @@ function drainBotEvents() {
 function step(dt) {
   state.time += dt;
   worldView.time = state.time;
+  // The buy phase is safe: bots walk to their positions but never engage.
+  // (bots.js gates sight and firing on world.canFight; it was never set, so
+  // bots fought — and killed the player — all through the buy phase.)
+  worldView.canFight = rounds.state.phase === 'live';
   worldView.playerAlive = state.alive;
   worldView.playerCrouching = player.state.crouching;
   worldView.playerSpeed = player.groundSpeed();
@@ -520,6 +547,8 @@ function step(dt) {
     closeBuy();
     hud.showBanner(`Round ${rounds.state.round} — claim the banner`, 3000);
     hud.setObjective('Claim the banner at the yard\'s heart — or wipe the Ember coven');
+    lastRadioAt = -99;
+    radioFromBot('Push the banner');
   }
   if (rounds.state.phase === 'live') {
     // The banner: who stands on the ring decides the claim.
@@ -536,6 +565,16 @@ function step(dt) {
       else emberHere = true;
     }
     const claimed = flag.captureTick(dt, azureHere, emberHere);
+    // Banner radio: a claim starting, or the ring turning contested, is
+    // called out once — the objective's state of play, spoken aloud.
+    const contested = azureHere && emberHere;
+    if (flag.state.team && flag.state.team !== lastFlagTeam) {
+      radioFromBot(flag.state.team === 'ember' ? 'Ember is claiming the banner — contest it!' : 'Claiming the banner — cover me');
+    } else if (contested && !lastContested) {
+      radioFromBot('Banner contested — hold the ring');
+    }
+    lastFlagTeam = flag.state.team;
+    lastContested = contested;
     if (flag.state.team && flag.state.progress > 0) {
       hud.setProgress(flag.state.team === 'azure' ? 'Azure claiming the banner' : 'Ember claiming the banner', flag.state.progress);
       const mark = Math.floor(flag.state.progress * 4);
@@ -566,6 +605,25 @@ function step(dt) {
     bots.step(dt, worldView);
     drainBotEvents();
     stepOrb(dt);
+
+    // Spotted intel: an Ember witch the player can see is marked for the
+    // minimap; the minimap and the ground name follow the player every step.
+    if (state.alive) {
+      for (const bot of bots.bots) {
+        if (!bot.alive || bot.team !== 'ember') continue;
+        const dx = bot.position.x - player.state.position.x;
+        const dz = bot.position.z - player.state.position.z;
+        if (dx * dx + dz * dz > 42 * 42) continue;
+        if (!map.segmentBlocked(player.state.position.x, player.state.position.y + player.state.eye, player.state.position.z, bot.position.x, 1.2, bot.position.z)) {
+          bot.spottedAt = state.time;
+        }
+      }
+    }
+    hud.drawMinimap({
+      px: player.state.position.x, pz: player.state.position.z, yaw: player.state.yaw,
+      bots: bots.bots, flagTeam: flag.state.team, flagProgress: flag.state.progress, time: state.time,
+    });
+    hud.setZone(map.zoneName(player.state.position.x, player.state.position.z));
 
     // Footsteps while moving on the ground.
     if (player.groundSpeed() > 1.5 && player.state.onGround && state.time - stepSoundAt > 0.38) {
@@ -729,6 +787,13 @@ function runShot(name) {
     hud.setScore(0, 0, 1);
     hud.setTimer(BUY_SECONDS, false);
     hud.setAlive(8, 8);
+    // The menu phase never steps the simulation, so the minimap would stay
+    // blank behind the overlay — draw it once from the staged state.
+    hud.drawMinimap({
+      px: player.state.position.x, pz: player.state.position.z, yaw: player.state.yaw,
+      bots: bots.bots, flagTeam: flag.state.team, flagProgress: flag.state.progress, time: state.time,
+    });
+    hud.setZone(map.zoneName(player.state.position.x, player.state.position.z));
     hud.showOverlay('start');
     document.getElementById('overlay').style.background = 'rgba(20, 24, 31, 0.55)';
   } else if (name === 'buy') {
@@ -808,9 +873,52 @@ function runSelfTest() {
   const check = (name, ok) => results.push(`${ok ? 'PASS' : 'FAIL'} ${name}`);
   try {
     startMatch();
+    check('15 bots on the field (7 Azure, 8 Ember)', bots.bots.length === 15 && bots.aliveCount('azure') === 7 && bots.aliveCount('ember') === 8);
+    // Buy phase: safe staging — no combat, nobody standing on the ring.
+    settle(840); // fourteen seconds of the fifteen-second buy phase
+    check('buy phase is safe: nobody takes damage', rounds.state.phase === 'buy' && state.health === 100 && bots.bots.every((b) => b.health === 100));
+    check('flag pushers stage off the ring during buy', bots.bots.every((b) => !b.alive || Math.hypot(b.position.x - 0, b.position.z - 1) >= 2.6));
     rounds.beginLive();
     check('round starts live with 3:00 clock', rounds.state.phase === 'live' && Math.round(rounds.state.clock) === 180);
-    check('15 bots on the field (7 Azure, 8 Ember)', bots.bots.length === 15 && bots.aliveCount('azure') === 7 && bots.aliveCount('ember') === 8);
+    // Banner claim, first, while the round is still fresh: one Azure witch
+    // on the ring, Ember witches far away. It must run before the covens
+    // reach the ring on their own — five live seconds in, the ring is already
+    // a contested scrum and no single witch's channel proves anything. The
+    // placed witch faces south and forgets every contact, and the Ember
+    // witches face north, so the claim is tested in isolation — in live play
+    // a witch that spots an enemy leaves the ring to fight it.
+    const azureBot = bots.bots.find((b) => b.team === 'azure' && b.alive);
+    azureBot.position.set(0, 0, 1);
+    azureBot.group.position.set(0, 0, 1);
+    azureBot.state = 'hold';
+    azureBot.holdUntil = 99999;
+    azureBot.route = [];
+    azureBot.seen = null;
+    azureBot.yaw = Math.PI;
+    azureBot.burstLeft = 0;
+    for (const b of bots.bots) {
+      if (b.team !== 'ember') continue;
+      b.position.set(0, 0, -16);
+      b.group.position.set(0, 0, -16);
+      b.state = 'hold';
+      b.holdUntil = 99999;
+      b.seen = null;
+      b.yaw = 0;
+      b.burstLeft = 0;
+    }
+    player.respawn({ x: 8, z: 8 }, 0);
+    settle(300);
+    check('banner claim ends the round for Azure', rounds.state.phase === 'ended' && rounds.state.endWinner === 'azure' && rounds.state.scoreAzure === 1);
+    // A fresh round for the opening-seconds checks: the pushers are still
+    // walking in from staging, so no claim may complete yet.
+    nextRound();
+    rounds.beginLive();
+    settle(240); // four live seconds
+    check('no instant banner claim in the opening seconds', rounds.state.phase === 'live');
+    check('teammates never target the player', bots.bots.filter((b) => b.team === 'azure').every((b) => !b.seen || b.seen.kind !== 'player'));
+    check('minimap canvas is drawn', document.getElementById('minimap').toDataURL().length > 2000);
+    window.__witch.hud.addRadio('RADIO Test: minimap check');
+    check('radio line posts to the HUD', document.querySelectorAll('#radio .radio-item').length > 0);
     check('Spark Bolt starts with 12 charges', weapons.state.charges.spark.mag === 12);
     weapons.takeCharge();
     weapons.takeCharge();
@@ -821,24 +929,6 @@ function runSelfTest() {
     const started = weapons.recharge();
     settle(100);
     check('R recharges the book', started && weapons.state.charges.spark.mag === 12);
-    // Banner claim: one Azure witch on the ring, Ember witches far away.
-    const azureBot = bots.bots.find((b) => b.team === 'azure' && b.alive);
-    azureBot.position.set(0, 0, 1);
-    azureBot.group.position.set(0, 0, 1);
-    azureBot.state = 'hold';
-    azureBot.holdUntil = 99999;
-    azureBot.route = [];
-    for (const b of bots.bots) {
-      if (b.team !== 'ember') continue;
-      b.position.set(0, 0, -16);
-      b.group.position.set(0, 0, -16);
-      b.state = 'hold';
-      b.holdUntil = 99999;
-      b.seen = null;
-    }
-    player.respawn({ x: 8, z: 8 }, 0);
-    settle(300);
-    check('banner claim ends the round for Azure', rounds.state.phase === 'ended' && rounds.state.endWinner === 'azure' && rounds.state.scoreAzure === 1);
     // Wipe.
     nextRound();
     rounds.beginLive();
@@ -924,7 +1014,7 @@ hud.setScore(0, 0, 1);
 hud.setTimer(BUY_SECONDS, false);
 hud.setObjective('Claim the banner at the yard\'s heart — or wipe the Ember coven');
 // A read-only handle for play-testing: live state, never used by the game itself.
-window.__witch = { state, rounds: rounds.state, money: economy.state, flag: flag.state, bots, player: player.state, weapons: weapons.state };
+window.__witch = { state, rounds: rounds.state, money: economy.state, flag: flag.state, bots, player: player.state, weapons: weapons.state, hud };
 if (params.get('selftest')) runSelfTest();
 else if (shot) runShot(shot);
 else {

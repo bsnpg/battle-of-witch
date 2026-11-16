@@ -67,10 +67,17 @@
     font-size: 14px; opacity: 0; transition: opacity 200ms; pointer-events: none; white-space: nowrap; }
   #banner.on { opacity: 1; }
 
-  #alive { position: fixed; top: 18px; left: 24px; font-family: var(--font-readout); font-size: 13px; line-height: 1.9; }
+  #alive { position: fixed; top: 184px; left: 24px; font-family: var(--font-readout); font-size: 13px; line-height: 1.9; }
   #alive .azure { color: var(--azure); }
   #alive .ember { color: var(--ember); }
   #alive .label { color: var(--muted); font-size: 11px; letter-spacing: .12em; }
+
+  #minimap { position: fixed; top: 18px; left: 24px; width: 168px; height: 138px;
+    border: 1px solid var(--hairline); border-radius: 4px; background: rgba(20, 24, 31, .78); }
+  #map-label { position: fixed; top: 161px; left: 24px; font-family: var(--font-readout);
+    font-size: 11px; letter-spacing: .12em; color: var(--muted); text-shadow: 0 1px 4px rgba(0,0,0,.8); }
+  #radio { position: fixed; top: 292px; left: 24px; width: 300px; font-size: 12px; line-height: 1.7; }
+  .radio-item { color: var(--accent); text-shadow: 0 1px 4px rgba(0,0,0,.8); }
 
   #feed { position: fixed; top: 18px; right: 24px; text-align: right; font-size: 13px; line-height: 1.7; }
   .feed-item { color: var(--muted); text-shadow: 0 1px 4px rgba(0,0,0,.8); }
@@ -154,6 +161,9 @@
     <div id="objective">Claim the banner at the yard's heart — or wipe the Ember coven</div>
   </div>
   <div id="banner"></div>
+  <canvas id="minimap" width="168" height="138"></canvas>
+  <div id="map-label">DUSTLINE YARD</div>
+  <div id="radio"></div>
   <div id="alive">
     <div class="label">AZURE COVEN</div>
     <div class="azure" id="alive-azure">●●●●●●●●</div>

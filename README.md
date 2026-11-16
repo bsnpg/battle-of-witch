@@ -39,9 +39,20 @@ best of 5, first to 3.
   Press `B` in the buy phase to buy spellbooks, blast tomes and robes.
 - **Bots:** fifteen bots that walk waypoint routes through the lanes, hold
   positions, push the banner, contest an enemy claim, react to what they see
-  and hear, and cast in bursts.
+  and hear, and cast in bursts. During the buy phase they stage at their own
+  approach node — nobody stands on the banner ring before the round starts,
+  and nobody fights until it is live. A witch standing on the ring never
+  wanders off after a distant sound: the claim is the job. Friendly fire is
+  off: Ember witches alone target the player, and the player's bolts, blasts
+  and void field only ever hurt Ember.
+- **Minimap and radio:** a live minimap (walls, the banner ring with its
+  claim arc, teammates always, Ember witches only while the coven's spotted
+  intel on them is fresh) with the name of the ground you stand on — Banner
+  Ring, Azure Yard, Ember Yard, West Stacks, East Stacks, Mid Yard. The
+  coven talks on the radio: contacts, banner claims and contests, called out
+  by name.
 - **HUD:** health and robe, charges, round timer, score, coven alive counts,
-  kill feed, crystals, and banner claim progress.
+  kill feed, crystals, banner claim progress, minimap and radio.
 
 ## Layout
 
@@ -69,13 +80,15 @@ best of 5, first to 3.
 The four captures are deterministic frames of the game's own code, taken in a
 headless browser with WebGL 2:
 
-1. `1-start.jpg` — the menu over the yard at dusk (cover)
-2. `2-play.jpg` — mid-round bolt fight near the banner
+1. `1-play.jpg` — mid-round bolt fight near the banner (cover)
+2. `2-start.jpg` — the menu over the yard at dusk
 3. `3-buy.jpg` — the buy phase menu
 4. `4-flag.jpg` — the banner three quarters claimed, an Ember witch contesting
 
 ## Self-test
 
-`?selftest=1` drives the real simulation headlessly — charges and recharge,
-banner claim, wipe, draw, overtime, shop spending, blast area damage, blast
-wind-up, Void Nova field — and writes PASS/FAIL lines to `window.__selftest`.
+`?selftest=1` drives the real simulation headlessly — buy-phase safety and
+staging, no instant banner claim, teammates never targeting the player,
+charges and recharge, banner claim, wipe, draw, overtime, shop spending,
+blast area damage, blast wind-up, Void Nova field, minimap draw and radio —
+and writes PASS/FAIL lines to `window.__selftest`.

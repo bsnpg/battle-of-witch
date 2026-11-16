@@ -18,6 +18,13 @@ const HEAR_RADIUS = 26;
 const FLAG_NODE = 8;
 const AZURE_COUNT = 7;
 const EMBER_COUNT = 8;
+// Buy-phase staging: flag pushers wait at their own approach node while the
+// round is being bought, and only push the banner once it is live. Without
+// this the pushers stand on the ring through the whole buy phase and the round
+// is claimed four seconds after it starts, before the player reaches the fight.
+function stagingNode(team) {
+  return team === 'azure' ? 2 : 14;
+}
 
 function routeBetween(waypoints, from, to) {
   // Breadth-first search over the waypoint graph; the graph is tiny.
@@ -111,6 +118,8 @@ export function createBots(scene, map, random) {
       seenAt: -99,
       seenPos: new THREE.Vector3(),
       hearPos: null,
+      spottedAt: -99, // last time this bot was seen by the Azure coven (minimap intel)
+      lastRadio: -99, // last time this bot called out on the radio
       burstLeft: 0,
       burstGap: 0,
       aimError: 0,
@@ -167,9 +176,11 @@ export function createBots(scene, map, random) {
     for (let i = 0; i < AZURE_COUNT; i += 1) {
       const bot = bots[i];
       spawnAt(bot, azureSpots[i][0], azureSpots[i][1], 0);
-      // Four push straight to the banner; three hold a mid lane first.
+      // Four push straight to the banner once the round is live; three hold a
+      // mid lane first. During the buy phase the pushers stage at their
+      // approach node instead of standing on the ring.
       bot.post = i < 4 ? 'flag' : 'lane';
-      bot.holdNode = bot.post === 'flag' ? FLAG_NODE : [7, 5, 9][i - 4];
+      bot.holdNode = bot.post === 'flag' ? stagingNode('azure') : [7, 5, 9][i - 4];
       bot.state = 'route';
       bot.route = routeBetween(map.waypoints, map.nearestWaypoint(bot.position.x, bot.position.z), bot.holdNode);
     }
@@ -177,7 +188,7 @@ export function createBots(scene, map, random) {
       const bot = bots[AZURE_COUNT + i];
       spawnAt(bot, emberSpots[i][0], emberSpots[i][1], Math.PI);
       bot.post = i < 4 ? 'flag' : 'lane';
-      bot.holdNode = bot.post === 'flag' ? FLAG_NODE : [7, 5, 9, 5][i - 4];
+      bot.holdNode = bot.post === 'flag' ? stagingNode('ember') : [7, 5, 9, 5][i - 4];
       bot.state = 'route';
       bot.route = routeBetween(map.waypoints, map.nearestWaypoint(bot.position.x, bot.position.z), bot.holdNode);
     }
@@ -187,7 +198,11 @@ export function createBots(scene, map, random) {
     // Returns {kind:'player'|'bot', ref, x, y, z, distance} or null.
     let best = null;
     let bestDistance = 42;
-    if (world.playerAlive) {
+    // The player is Azure: only Ember witches may target them. Without the
+    // team check the player's own coven — spawned metres away, inside the
+    // 6-metre no-facing-needed range — senses the player at the live start
+    // and shoots them dead in the opening seconds of every round.
+    if (world.playerAlive && bot.team === 'ember') {
       const px = world.playerPos.x;
       const py = world.playerPos.y + (world.playerCrouching ? 1.0 : 1.5);
       const pz = world.playerPos.z;
@@ -314,21 +329,37 @@ export function createBots(scene, map, random) {
         if (!bot.seen || bot.seen.kind !== seen.kind || bot.seen.ref !== seen.ref) {
           bot.seenAt = world.time + bot.reaction;
           bot.burstLeft = 0;
+          // First spot: the coven's radio callout, throttled per bot so the
+          // feed never floods. Only Azure witches report to the player.
+          if (!bot.seen && bot.team === 'azure' && world.time - bot.lastRadio > 14) {
+            bot.lastRadio = world.time;
+            const zone = world.zoneName ? world.zoneName(seen.x, seen.z) : 'the yard';
+            events.push({ type: 'radio', text: `${bot.name}: Contact at ${zone}` });
+          }
         }
         bot.seen = seen;
         bot.seenPos.set(seen.x, seen.y, seen.z);
+        // Spotted intel: an enemy witch seen by the Azure coven is marked for
+        // the minimap for four seconds — the player only ever sees what the
+        // coven has actually spotted, never the whole enemy team.
+        if (seen.kind === 'bot') seen.ref.spottedAt = world.time;
       } else if (bot.seen && world.time - bot.seenAt > 1.2) {
         bot.seen = null;
       }
     }
 
-    // Hearing: a loud spell within range pulls a bot toward the sound.
+    // Hearing: a loud spell within range pulls a bot toward the sound —
+    // unless the bot is standing on the banner ring, where its job is to
+    // channel or contest. Without that guard a witch that has just started
+    // channelling walks off the ring at the first distant gunshot and the
+    // claim it was building dies with it.
     if (world.noise && world.noise.time > world.time - 0.4) {
       const dx = world.noise.x - bot.position.x;
       const dz = world.noise.z - bot.position.z;
       if (dx * dx + dz * dz < HEAR_RADIUS * HEAR_RADIUS && bot.state !== 'engage' && !bot.seen) {
         bot.hearPos = { x: world.noise.x, z: world.noise.z };
-        if (bot.state === 'hold') setRoute(bot, map.nearestWaypoint(world.noise.x, world.noise.z));
+        const onRing = world.flag && Math.hypot(bot.position.x - world.flag.x, bot.position.z - world.flag.z) < world.flag.radius;
+        if (bot.state === 'hold' && !onRing) setRoute(bot, map.nearestWaypoint(world.noise.x, world.noise.z));
       }
     }
 
@@ -388,6 +419,8 @@ export function createBots(scene, map, random) {
     }
 
     // Hold: scan slowly, then move on — to the banner, or back to a lane.
+    // While the round is still being bought, nobody routes onto the ring: the
+    // push waits at the staging node until the round goes live.
     if (bot.state === 'hold') {
       bot.yaw += Math.sin(world.time * 0.5 + bot.index) * 0.35 * dt;
       if (world.time >= bot.holdUntil) {
@@ -397,8 +430,9 @@ export function createBots(scene, map, random) {
           bot.holdNode = next;
           setRoute(bot, next);
         } else {
-          bot.holdNode = FLAG_NODE;
-          setRoute(bot, FLAG_NODE);
+          const target = world.canFight === false ? stagingNode(bot.team) : FLAG_NODE;
+          bot.holdNode = target;
+          setRoute(bot, target);
         }
       }
     }
@@ -414,10 +448,13 @@ export function createBots(scene, map, random) {
       for (const bot of bots) if (bot.alive && bot.team === team) count += 1;
       return count;
     },
-    hitMeshes() {
+    hitMeshes(team = 'ember') {
+      // The player's bolts only ever meet the enemy coven: teammates are
+      // never hittable, so the player cannot team-kill (or farm crystals
+      // off their own coven).
       const meshes = [];
       for (const bot of bots) {
-        if (bot.alive) meshes.push(bot.torso, bot.head);
+        if (bot.alive && bot.team === team) meshes.push(bot.torso, bot.head);
       }
       return meshes;
     },

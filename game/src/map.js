@@ -178,6 +178,16 @@ export function createMap(scene) {
     banner: { x: 0, z: 1 },
     bounds: { minX: -22.4, maxX: 22.4, minZ: -18.4, maxZ: 18.4 },
     segmentBlocked,
+    // Named ground, for the minimap label and the radio callouts: the yard
+    // reads as places, not coordinates.
+    zoneName(x, z) {
+      if (Math.hypot(x - 0, z - 1) < 5) return 'Banner Ring';
+      if (z > 12) return 'Azure Yard';
+      if (z < -12) return 'Ember Yard';
+      if (x < -8) return 'West Stacks';
+      if (x > 8) return 'East Stacks';
+      return 'Mid Yard';
+    },
     nearestWaypoint(x, z) {
       let best = 0;
       let bestDistance = Infinity;
